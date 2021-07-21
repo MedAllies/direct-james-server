@@ -9,7 +9,6 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.james.GuiceJamesServer;
 import org.apache.james.modules.MailboxModule;
 import org.apache.james.modules.activemq.ActiveMQQueueModule;
-import org.apache.james.modules.data.JPADataModule;
 import org.apache.james.modules.data.SieveJPARepositoryModules;
 import org.apache.james.modules.mailbox.DefaultEventModule;
 import org.apache.james.modules.mailbox.JPAMailboxModule;
@@ -33,9 +32,12 @@ import org.apache.james.modules.server.ReIndexingModule;
 import org.apache.james.modules.server.SieveQuotaRoutesModule;
 import org.apache.james.modules.server.SwaggerRoutesModule;
 import org.apache.james.modules.spamassassin.SpamAssassinListenerModule;
+import org.nhind.config.rest.AddressService;
 import org.nhind.config.rest.DomainService;
 import org.nhindirect.config.model.Domain;
 import org.nhindirect.james.server.modules.DirectWebAdminServerModule;
+import org.nhindirect.james.server.modules.HybridDataModule;
+import org.nhindirect.james.server.modules.RESTDataServiceModule;
 import org.parboiled.common.FileUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -218,7 +220,7 @@ public class JamesServerConfig
 		
 		JPA_SERVER_MODULE = Modules.combine(new Module[]{new ActiveMQQueueModule(),
 				new DefaultProcessorsConfigurationProviderModule(), new ElasticSearchMetricReporterModule(),
-				new JPADataModule(), new JPAMailboxModule(), new MailboxModule(), new LuceneSearchMailboxModule(), new NoJwtModule(),
+				new HybridDataModule(), new JPAMailboxModule(), new MailboxModule(), new LuceneSearchMailboxModule(), new NoJwtModule(),
 				new RawPostDequeueDecoratorModule(), new SieveJPARepositoryModules(),
 				new DefaultEventModule(), new SpamAssassinListenerModule()});
 		
@@ -228,7 +230,7 @@ public class JamesServerConfig
 	
 	@Bean
 	@ConditionalOnMissingBean
-	public GuiceJamesServer jamesServer() throws Exception
+	public GuiceJamesServer jamesServer(DomainService domService, AddressService addrService) throws Exception
 	{
 		writeJPAConfig();
 		
@@ -244,11 +246,13 @@ public class JamesServerConfig
 		
 		writeSMTPConfig();
 		
+		writeUserRepositoryConfig();		
+		
 		final org.apache.james.server.core.configuration.Configuration configuration = 
 				org.apache.james.server.core.configuration.Configuration.builder().workingDirectory(".").build();
 		
 		final GuiceJamesServer server = GuiceJamesServer.forConfiguration(configuration)
-				.combineWith(new Module[]{JPA_MODULE_AGGREGATE, new JMXServerModule()});
+				.combineWith(new Module[]{JPA_MODULE_AGGREGATE, new JMXServerModule(), new RESTDataServiceModule(domService, addrService)});
 		
 		server.start();
 		
@@ -288,6 +292,15 @@ public class JamesServerConfig
 
 		
 		FileUtils.writeAllText(webAdminString, file);
+	}
+	
+	protected void writeUserRepositoryConfig() throws Exception
+	{
+		final File file = new File("conf/usersrepository.xml");
+		
+		String userRepositoryXML = IOUtils.resourceToString("/properties/usersrepository.xml", Charset.defaultCharset());
+		
+		FileUtils.writeAllText(userRepositoryXML, file);
 	}
 	
 	protected void writeDomainListConfig() throws Exception
